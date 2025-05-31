@@ -125,7 +125,8 @@ def get_all_seances(request):
 def post_seance(request, playload: SeanceIn):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
-    seance = Seance.objects.create(**playload.dict())
+    status = get_object_or_404(SeanceStatus, id=1)
+    seance = Seance.objects.create(**playload.dict(), status=status)
     return {"message": f"Сеанс успешно добавлен. Код сеанса: {seance.id}"}
 
 @api.get("seance/{id}", response=SeanceOut, summary="Показать определенный сеанс", tags=["Сеанс"])
