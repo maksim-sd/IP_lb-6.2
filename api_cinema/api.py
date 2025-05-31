@@ -15,142 +15,192 @@ class BasicAuth(HttpBasicAuth):
     def authenticate(self, request, username, password):
         return authenticate(username=username, password=password)
 
+# def auth_group(name):
+#     def decorator(func):
+#         def wrapper(request, *args, **kwargs):
+#             if not request.auth.groups.filter(name=name).exists():
+#                 return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
+#             return func(request, *args, **kwargs)
+#         return wrapper
+#     return decorator
 
-@api.get("genres/view", response=List[GenreOut], summary="Показать жанры")
-def genres_view(request):
+@api.post("registration", summary="Регистрация", tags=["Пользователь"])
+def post_registration(request, playload: ClientIn):
+    if User.objects.filter(username=playload.username).exists():
+        return api.create_response(request, {"message": "Пользователь уже зарегистрирован!"}, status=409)
+    User.objects.create(**playload.dict())
+    return {"message": "Пользователь успешно зарегистрирован"}
+
+@api.post("ticket", auth=BasicAuth(), summary="Забронировать билет", tags=["Пользователь"])
+def post_ticket(request, playload: TicketIn):
+    status = get_object_or_404(TicketStatus, id=1)
+    client = request.auth
+    seance = get_object_or_404(Seance, id=playload.seance_id)
+    status_seance = get_object_or_404(SeanceStatus, id=3)
+    if (seance.hall.number_places < playload.place or playload.place < 1) or \
+        (seance.hall.number_rows < playload.row or playload.row < 1):
+        return api.create_response(request, {"message": "Данное место отсутствует"}, status=400)
+    if seance.status == status_seance:
+        return api.create_response(request, {"message": "Сеан уже завершён"}, status=400)
+    if Ticket.objects.filter(row=playload.row, place=playload.place, seance=seance).exclude(status_id=3).exists():
+        return api.create_response(request, {"message": "На данное место уже забронирован билет"}, status=400)
+    ticket = Ticket.objects.create(**playload.dict(), client=client, status=status)
+    return {"message": f"Билет успешно забронирован. Код билета: {ticket.id}"}
+
+@api.get("user/ticket", response=List[TicketOut], auth=BasicAuth(), summary="Показать мои билеты", tags=["Пользователь"])
+def get_user_ticket(request):
+    return Ticket.objects.filter(client=request.auth)
+
+@api.get("genres", response=List[GenreOut], auth=BasicAuth(), summary="Показать все жанры", tags=["Жанр"])
+def get_all_genres(request):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     return Genre.objects.all()
 
-@api.get("genre/view", response=GenreOut, summary="Показать определенный жанр")
-def genre_view(request, id:int = Query(description="Код жанра")):
+@api.get("genre/{id}", response=GenreOut, auth=BasicAuth(), summary="Показать определенный жанр", tags=["Жанр"])
+def get_genre(request, id:int):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     return get_object_or_404(Genre, id=id)
 
-@api.post("movie/add", auth=BasicAuth(), summary="Добавить кино")
-def movie_add(request, playload: MovieIn):
+@api.get("movies", response=List[MovieOut], summary="Показать все кино", tags=["Кино"])
+def get_movies(request):
+    return Movie.objects.all()
+
+@api.post("movie", auth=BasicAuth(), summary="Добавить кино", tags=["Кино"])
+def post_movie(request, playload: MovieIn):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     movie = Movie.objects.create(**playload.dict())
     return {"message": f"Кино успешно добавлено. Код кино: {movie.id}"}
 
-@api.get("movies/view", response=List[MovieOut], summary="Показать все кино")
-def movies_view(request):
-    return Movie.objects.all()
-
-@api.get("movie/view", response=MovieOut, summary="Показать определенное кино")
-def movie_view(request, id:int = Query(description="Код кино")):
+@api.get("movie/{id}", response=MovieOut, summary="Показать определенное кино", tags=["Кино"])
+def get_movie(request, id:int):
     return get_object_or_404(Movie, id=id)
 
-@api.get("movie/genres/view", response=List[MovieGenreOutGenre], summary="Показать жанры определенного кино")
-def movie_genres_view(request, id:int = Query(description="Код кино")):
-    movie = get_object_or_404(Movie, id=id)
-    return MovieGenre.objects.filter(movie=movie)
-
-@api.get("movies/filter/genre", response=List[MovieGenreOutMovie], summary="Покать кино определенного жанра")
-def movies_filter_genre(request, id:int = Query(description="Код жанра")):
-    genre = get_object_or_404(Genre, id=id)
-    return MovieGenre.objects.filter(genre=genre)
-
-@api.patch("movie/update", auth=BasicAuth(), summary="Обновить кино")
-def movie_update(request, playload: MovieIn, id:int = Query(description="Код кино")):
+@api.patch("movie/{id}", auth=BasicAuth(), summary="Обновить кино", tags=["Кино"])
+def patch_movie(request, playload: MovieIn, id:int):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     movie = get_object_or_404(Movie, id=id)
-    for att, value in playload.dict.items():
+    for att, value in playload.dict().items():
         setattr(movie, att, value)
     movie.save()
     return {"message": "Кино успешно обновлено"}
 
-@api.delete("movie/delete", auth=BasicAuth(), summary="Удалить кино")
-def movie_delete(request, id:int = Query(description="Код кино")):
+@api.delete("movie/{id}", auth=BasicAuth(), summary="Удалить кино", tags=["Кино"])
+def delete_movie(request, id:int):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
-    return get_object_or_404(Movie, id=id).delete()
+    get_object_or_404(Movie, id=id).delete()
+    return {"message": "Кино успешно удалено"}
 
-@api.get("halls/view", response=List[HallOut], summary="Показать залы")
-def halls_view(request):
+@api.get("genres/movie/{id}", response=List[MovieGenreOutGenre], summary="Показать жанры определенного кино", tags=["Кино"])
+def get_genres_movie(request, id:int):
+    movie = get_object_or_404(Movie, id=id)
+    return MovieGenre.objects.filter(movie=movie)
+
+@api.get("movies/genre/{id}", response=List[MovieGenreOutMovie], summary="Покать кино определенного жанра", tags=["Кино"])
+def get_movies_genre(request, id:int):
+    genre = get_object_or_404(Genre, id=id)
+    return MovieGenre.objects.filter(genre=genre)
+
+@api.get("halls", response=List[HallOut], auth=BasicAuth(), summary="Показать все залы", tags=["Зал"])
+def get_all_halls(request):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     return Hall.objects.all()
 
-@api.get("hall/view", response=HallOut, summary="Показать определенный зал")
-def hall_view(request, id:int = Query(description="Код зала")):
+@api.get("hall/{id}", response=HallOut, auth=BasicAuth(), summary="Показать определенный зал", tags=["Зал"])
+def get_hall(request, id:int):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     return get_object_or_404(Hall, id=id)
 
-@api.post("seance/add", auth=BasicAuth(), summary="Добавить сеанс")
-def seance_add(request, playload: SeanceIn):
+@api.get("seances", response=List[SeanceOut], summary="Показать все сеансы", tags=["Сеанс"])
+def get_all_seances(request):
+    return Seance.objects.all()
+
+@api.post("seance", auth=BasicAuth(), summary="Добавить сеанс", tags=["Сеанс"])
+def post_seance(request, playload: SeanceIn):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     seance = Seance.objects.create(**playload.dict())
     return {"message": f"Сеанс успешно добавлен. Код сеанса: {seance.id}"}
 
-@api.get("seances/view", response=List[SeanceOut], summary="Показать сеансы")
-def seances_view(request):
-    return Seance.objects.all()
-
-@api.get("seance/view", response=SeanceOut, summary="Показать определенный сеанс")
-def seance_view(request, id:int = Query(description="Код сеанса")):
+@api.get("seance/{id}", response=SeanceOut, summary="Показать определенный сеанс", tags=["Сеанс"])
+def get_seance(request, id:int):
     return get_object_or_404(Seance, id=id)
 
-@api.get("seance/filter/genre", response=List[SeanceOut], summary="Показать сеансы определенного жанра")
-def seance_filter_genre(request, id:int = Query(description="Код жанра")):
-    genre = get_object_or_404(Genre, id=id)
-    movie = Movie.objects.filter(moviegenre__genre=genre)
-    return Seance.objects.filter(movie__in = movie)
+@api.patch("seance", auth=BasicAuth(), summary="Обновить сеанс", tags=["Сеанс"])
+def patch_seance(request, playload: SeanceIn, id:int):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
+    seance = get_object_or_404(Seance, id=id)
+    for att, value in playload.dict().items():
+        setattr(seance, att, value)
+    seance.save()
+    return {"message": "Сеанс успешно обновлен"}
 
-@api.get("seance/filter/date", response=List[SeanceOut], summary="Показать сеансы на указанную дату")
-def seance_filter_date(request, date:date = Query(description="Дата")):
-    return Seance.objects.filter(date_and_time__date = date)
+@api.delete("seance", auth=BasicAuth(), summary="Удалить сеанс", tags=["Сеанс"])
+def delete_seance(request, id:int):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
+    get_object_or_404(Seance, id=id).delete()
+    return {"message": "Сеанс успешно удален"}
 
-@api.get("seance/tickets/view", auth=BasicAuth(), response=List[TicketOut], summary="Показать все оформленные билеты на сеанс")
-def seance_ticket_view(request, id:int = Query(description="Код сеанса")):
+@api.get("seance/filter/", response=List[SeanceOut], summary="Отфильтровать сеансы", tags=["Сеанс"])
+def seance_filter_genre(request, id_genre:int = Query(None, description="Код жанра"), date:date = Query(None, description="Дата")):
+    seances = Seance.objects.all()
+    if id_genre is not None:
+        genre = get_object_or_404(Genre, id=id_genre)
+        movie = Movie.objects.filter(moviegenre__genre=genre)
+        seances = seances.filter(movie__in = movie)
+    if date is not None:
+        seances = seances.filter(date_and_time__date = date)
+    return seances
+
+@api.get("statuses/seance", auth=BasicAuth(), response=List[SeanceStatusOut], summary="Показать возможные статусы сеанса", tags=["Сеанс"])
+def get_statuses_seance(request):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
+    return SeanceStatus.objects.all()
+
+@api.patch("seance/{id_seance}/status/{id_status}", auth=BasicAuth(), response=List[SeanceStatusOut], summary="Изменить статус сеанса", tags=["Сеанс"])
+def get_statuses_seance(request, id_seance:int, id_status:int):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
+    status = get_object_or_404(SeanceStatus, id=id_status)
+    seance = get_object_or_404(Seance, id=id_seance)
+    seance.status = status
+    seance.save()
+    return {"message": "Статус сеанса успешно изменен"}
+
+@api.get("seance/{id}/tickets", auth=BasicAuth(), response=List[TicketOut], summary="Показать все оформленные билеты на сеанс", tags=["Билет"])
+def get_seance_tickets(request, id:int):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     seance = get_object_or_404(Seance, id=id)
     return Ticket.objects.filter(seance=seance)
 
-@api.patch("seance/update", auth=BasicAuth(), summary="Обновить сеанс")
-def seance_update(request, playload: SeanceIn, id:int = Query(description="Код сеанса")):
+@api.get("ticket/{id}", auth=BasicAuth(), response=TicketOut, summary="Показать определенный билет", tags=["Билет"])
+def get_ticket(request, id:int):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
-    seance = get_object_or_404(Seance, id=id)
-    for att, value in playload.dict.items():
-        setattr(seance, att, value)
-    seance.save()
-    return {"message": "Сеанс успешно обновлен"}
+    return get_object_or_404(Ticket, id=id)
 
-@api.delete("seance/delete", auth=BasicAuth(), summary="Удалить сеанс")
-def seance_delete(request, id:int = Query(description="Код сеанса")):
+@api.get("statuses/ticket", response=List[TicketStatusOut], auth=BasicAuth(), summary="Показать возможные статусы билета", tags=["Билет"])
+def get_statuses_ticket(request):
     if not request.auth.groups.filter(name="Администратор").exists():
         return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
-    return get_object_or_404(Seance, id=id).delete()
-
-@api.get("ticket/statuses/view", response=List[TicketStatusOut], summary="Показать статусы билета")
-def ticket_statuses_view(request):
     return TicketStatus.objects.all()
 
-@api.get("ticket/status/view", response=TicketStatusOut, summary="Показать определенный статус билета")
-def ticket_status_view(request, id:int = Query(description="Код статуса билета")):
-    return get_object_or_404(TicketStatus, id=id)
-
-@api.post("ticket/add", auth=BasicAuth(), summary="Забронировать билет")
-def ticket_add(request, playload: TicketIn):
-    status = get_object_or_404(TicketStatus, id=1)
-    client = request.auth
-    ticket = Ticket.objects.create(**playload.dict(), client=client, status=status)
-    return {"message": f"Билет успешно забронирован. Код билета: {ticket.id}"}
-
-@api.patch("ticket/status/update", auth=BasicAuth(), summary="Изменить статус билета")
-def ticket_status_update(request, id_ticket:int = Query(description="Код билета"), id_status:int = Query(description="Код статуса билета")):
+@api.patch("ticket/{id_ticket}/status/{id_status}", auth=BasicAuth(), summary="Изменить статус билета", tags=["Билет"])
+def patch_ticket_status(request, id_ticket:int, id_status:int):
+    if not request.auth.groups.filter(name="Администратор").exists():
+        return api.create_response(request, {"message": "Не достаточно прав"}, status=403)
     ticket = get_object_or_404(Ticket, id=id_ticket)
     status = get_object_or_404(TicketStatus, id=id_status)
     ticket.status = status
     ticket.save()
     return {"message": "Статус билета успешно изменен"}
-
-@api.delete("ticket/delete", auth=BasicAuth(), summary="Удалить билет")
-def ticket_delete(request, id:int = Query(description="Код билета")):
-    get_object_or_404(Ticket, id=id).delete()
-    return {"message": "Билет был успешно удален"}
-
-@api.get("ticket/view", auth=BasicAuth(), response=TicketOut, summary="Показать определенный билет")
-def ticket_view(request, id:int = Query(description="Код билета")):
-    return get_object_or_404(Ticket, id=id)
-
-

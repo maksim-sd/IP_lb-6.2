@@ -49,12 +49,22 @@ class Hall(models.Model):
         verbose_name = "Зал"
         verbose_name_plural = "Залы"
         
+class SeanceStatus(models.Model):
+    name = models.CharField(max_length=20, verbose_name="Название")
+    
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        verbose_name = "Статус сеанса"
+        verbose_name_plural = "Статусы саенса"
 
 class Seance(models.Model):
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE, verbose_name="Кино")
     hall = models.ForeignKey(Hall, on_delete=models.CASCADE, verbose_name="Зал")
     date_and_time = models.DateTimeField(verbose_name="Дата и время сеанса")
     price = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Стоимость")
+    status = models.ForeignKey(SeanceStatus, on_delete=models.CASCADE, verbose_name="Статус")
     
     def __str__(self):
         return self.movie.name + " " + self.date_and_time.strftime("%d.%m.%Y %H:%M")
@@ -80,7 +90,7 @@ class Ticket(models.Model):
     client = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Клиент")
     row = models.IntegerField(verbose_name="Ряд")
     place = models.IntegerField(verbose_name="Место")
-    status = models.ForeignKey(TicketStatus, on_delete=models.CASCADE, verbose_name="Статус билета")
+    status = models.ForeignKey(TicketStatus, on_delete=models.CASCADE, verbose_name="Статус")
     
     class Meta:
         verbose_name = "Билет"

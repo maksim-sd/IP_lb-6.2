@@ -43,6 +43,11 @@ class HallOut(Schema):
     number_places: int
 
 
+class SeanceStatusOut(Schema):
+    id:int
+    name:str
+
+
 class SeanceIn(Schema):
     movie_id: int
     hall_id: int
@@ -56,6 +61,7 @@ class SeanceOut(Schema):
     hall: HallOut
     date_and_time: datetime
     price: int
+    status:SeanceStatusOut
     
     
 class TicketStatusOut(Schema):
@@ -66,6 +72,13 @@ class TicketStatusOut(Schema):
 class ClientOut(Schema):
     id: int
     username: str
+    email: str
+    
+    
+class ClientIn(Schema):
+    id: int
+    username: str
+    password: str
     email: str
 
 

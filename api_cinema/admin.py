@@ -25,7 +25,7 @@ class HallAdmin(admin.ModelAdmin):
     
 @admin.register(Seance)
 class SeanceAdmin(admin.ModelAdmin):
-    list_display = ["id", "movie", "hall", "date_and_time", "price"]
+    list_display = ["id", "movie", "hall", "date_and_time", "price", "status"]
     
 
 @admin.register(TicketStatus)
@@ -35,3 +35,7 @@ class TicketStatusAdmin(admin.ModelAdmin):
 @admin.register(Ticket)
 class TicketAdmin(admin.ModelAdmin):
     list_display = ["id", "seance", "client", "row", "place", "status"]
+    
+@admin.register(SeanceStatus)
+class SeanceStatusAdmin(admin.ModelAdmin):
+    list_display = ["id", "name"]
